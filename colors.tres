@@ -1,0 +1,28 @@
+[gd_resource type="TileSet" load_steps=3 format=3 uid="uid://fmvew5o67ukl"]
+
+[ext_resource type="Texture2D" uid="uid://cguh7wnbmw5a1" path="res://cie5.png" id="1_npayi"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_mq600"]
+resource_name = "CIE5"
+texture = ExtResource("1_npayi")
+texture_region_size = Vector2i(1, 1)
+1:0/0 = 0
+2:0/0 = 0
+3:0/0 = 0
+4:0/0 = 0
+5:0/0 = 0
+6:0/0 = 0
+7:0/0 = 0
+8:0/0 = 0
+9:0/0 = 0
+10:0/0 = 0
+11:0/0 = 0
+12:0/0 = 0
+0:0/0 = 0
+13:0/0 = 0
+14:0/0 = 0
+15:0/0 = 0
+
+[resource]
+tile_size = Vector2i(1, 1)
+sources/0 = SubResource("TileSetAtlasSource_mq600")
