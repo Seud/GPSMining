@@ -14,7 +14,6 @@ public partial class OSMTiles : Node2D
 
     public const int MAX_RENDERED_TILES = 1000;
 
-    private int map_scale = 4;
     private int tile_amount_x = 3;
     private int tile_amount_y = 3;
 
@@ -52,14 +51,10 @@ public partial class OSMTiles : Node2D
         return 1 << zoom;
     }
 
-    public void UpdateSize(Vector2 size, int scale)
+    public void UpdateSize(Vector2 size)
     {
-        map_scale = scale;
-        tile_amount_x = (int)Mathf.Ceil(size.X / (TILE_SIZE * scale));
-        tile_amount_y = (int)Mathf.Ceil(size.Y / (TILE_SIZE * scale));
-
-        //tile_amount_x = 0;
-        //tile_amount_y = 0;
+        tile_amount_x = (int)Mathf.Ceil(size.X / (2 * TILE_SIZE * NoiseMap.TILE_SCALE));
+        tile_amount_y = (int)Mathf.Ceil(size.Y / (2 * TILE_SIZE * NoiseMap.TILE_SCALE));
 
         GD.Print($"Tile grid {tile_amount_x}x{tile_amount_y}");
     }
@@ -140,7 +135,6 @@ public partial class OSMTiles : Node2D
         Sprite2D sprite = new()
         {
             Texture = default_tile_tex,
-            Scale = new(1, 1),
             Centered = false,
         };
 

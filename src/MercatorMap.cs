@@ -5,8 +5,7 @@ namespace GPSMining;
 
 public partial class MercatorMap : RefCounted
 {
-    public const int TILE_SIZE_POW = 8;
-    public const int TILE_SIZE = 1 << TILE_SIZE_POW; // 256
+    public const int TILE_SIZE = 256;
     public const int DEFAULT_ZOOM = 17;
     public const int MAX_ZOOM = 19;
 

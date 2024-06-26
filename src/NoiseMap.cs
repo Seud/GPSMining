@@ -5,14 +5,11 @@ namespace GPSMining;
 
 public partial class NoiseMap : Node2D
 {
-    private static readonly Random r = new();
+    private readonly Random r = new();
 
     public const int TARGET_SIZE = 256;
+    public const int TILE_SCALE = 2;
     public const int MOVE = 8;
-
-    private int x_max = 128;
-    private int y_max = 128;
-    private int map_scale = 4;
 
     private float power_min = 0.25f;
     private float power_max = 0.75f;
@@ -20,21 +17,23 @@ public partial class NoiseMap : Node2D
     private float coverage_min;
     private float coverage_max;
     private float average;
+    private float center_noise;
 
     private int zoomMod = 0;
     private int makeTimer = 0;
     private int windowTimer = 0;
 
     private Vector2 center = new();
+    private int noise_scale = 4;
 
     private MercatorMap map = new();
     private NoiseSphere noise_sphere = new();
     private OSMTiles osm_tiles;
-    private TileMap tile_map;
+    private Sprite2D noise_overlay;
 
     public int GetArea()
     {
-        return x_max * y_max * 4;
+        return (int)center.X * (int)center.Y * 4;
     }
 
     public void MakeMap()
@@ -54,35 +53,46 @@ public partial class NoiseMap : Node2D
 
         osm_tiles.Move(position, zoom);
 
-        for (int x = -x_max; x < x_max; x++)
+        int max_x = (int) Math.Ceiling((double) center.X / noise_scale);
+        int max_y = (int) Math.Ceiling((double) center.Y / noise_scale);
+
+        Image noise_image = Image.Create(max_x * 2, max_y * 2, false, Image.Format.Rgba8);
+
+        for (int x = -max_x; x < max_x; x++)
         {
-            for (int y = -y_max; y < y_max; y++)
+            for (int y = -max_y; y < max_y; y++)
             {
-                Vector2I offset = new(x, y);
+                Vector2I offset = new Vector2I(x, y) * noise_scale / TILE_SCALE;
                 Vector2I position_adj = map.GetPosition() + offset;
 
                 if (position_adj.Y < 0 || position_adj.Y > MercatorMap.GetMaxPosition(zoom))
                 {
-                    tile_map.SetCell(-1, new Vector2I(x, y));
                     continue;
                 }
 
                 double longitude_adj = MercatorMap.GetLongitude(position_adj, zoom);
                 double latitude_adj = MercatorMap.GetLatitude(position_adj, zoom);
 
-                float noise = noise_sphere.GetNoiseSphere(latitude_adj, longitude_adj);
+                float noise_raw = noise_sphere.GetNoiseSphere(latitude_adj, longitude_adj);
 
-                float noise_mod = (noise - power_min) / (power_max - power_min);
+                float noise = Mathf.Clamp((noise_raw - power_min) / (power_max - power_min), 0, 1);
+                if (x == 0 && y == 0)
+                {
+                    center_noise = noise;
+                }
 
-                if (noise_mod >= 0) coverage_min += 1;
-                if (noise_mod >= 1) coverage_max += 1;
-                average += Mathf.Clamp(noise_mod, 0, 1);
+                if (noise >= 0) coverage_min += 1;
+                if (noise >= 1) coverage_max += 1;
+                average += Mathf.Clamp(noise, 0, 1);
 
-                int coord = (int)Math.Clamp(Mathf.Ceil(noise_mod * 10), 0, 11);
-
-                tile_map.SetCell(0, new Vector2I(x, y), 0, new Vector2I(coord, 0));
+                if (noise > 0)
+                {
+                    noise_image.SetPixel(x + max_x, y + max_y, Color.FromHsv((1 - noise) * 2 / 3, 0.8f + 0.2f * noise, 1));
+                }
             }
         }
+
+        noise_overlay.Texture = ImageTexture.CreateFromImage(noise_image);
 
         UpdateUI();
     }
@@ -97,12 +107,13 @@ public partial class NoiseMap : Node2D
         String text = $"" +
             $"Zoom Level : ({zoom})\n" +
             $"Position : ({position.X}, {position.Y})\n" +
+            $"Noise here : {Math.Round(100 * center_noise, 4)} %\n" +
             $"Tile : ({tile.X}, {tile.Y}), ({tile_local_position.X}, {tile_local_position.Y})\n" +
             $"Latitude : {Math.Round(MercatorMap.GetLatitude(position, zoom) * 180 / Math.PI, 4)} °\n" +
             $"Longitude : {Math.Round(MercatorMap.GetLongitude(position, zoom) * 180 / Math.PI, 4)} °\n" +
             $"Coverage (Min) : {Math.Round(100 * coverage_min / GetArea(), 4)} %\n" +
             $"Coverage (Max) : {Math.Round(100 * coverage_max / GetArea(), 4)} %\n" +
-            $"Average : {Math.Round(100 * average / coverage_min, 4)}";
+            $"Average : {Math.Round(100 * average / coverage_min, 4)} %\n";
 
         RichTextLabel map_ui_text = GetNode<RichTextLabel>("%UIText");
         map_ui_text.Text = text;
@@ -117,25 +128,23 @@ public partial class NoiseMap : Node2D
     {
         Vector2 viewport_size = GetViewportRect().End;
 
-        map_scale = (int)Math.Floor(Math.Sqrt(viewport_size.X * viewport_size.Y)) / TARGET_SIZE;
-        x_max = (int)Mathf.Ceil(viewport_size.X / (2 * map_scale));
-        y_max = (int)Mathf.Ceil(viewport_size.Y / (2 * map_scale));
         center = viewport_size / 2;
+        noise_scale = (int)Math.Ceiling(Math.Sqrt(center.X * center.Y) / TARGET_SIZE);
+        noise_overlay.Scale = new(noise_scale, noise_scale);
 
-        GD.Print($"DIM : {viewport_size.X}, {viewport_size.Y} - SIZ {x_max}, {y_max} - SCALE {map_scale}");
+        GD.Print();
 
-        tile_map.Clear();
-        tile_map.Position = center;
-        tile_map.Scale = new(map_scale, map_scale);
+        osm_tiles.Position = center;
+        osm_tiles.Scale = new(TILE_SCALE, TILE_SCALE);
 
-        osm_tiles.UpdateSize(viewport_size, map_scale);
+        osm_tiles.UpdateSize(viewport_size);
         MakeMap();
     }
 
     // Called when the node enters the scene tree for the first time.
     public override void _Ready()
     {
-        tile_map = GetNode<TileMap>("%Map");
+        noise_overlay = GetNode<Sprite2D>("%NoiseOverlay");
         osm_tiles = GetNode<OSMTiles>("%OSMTiles");
         GetTree().Root.SizeChanged += () => WindowResized();
         ResizeMap();
@@ -175,9 +184,9 @@ public partial class NoiseMap : Node2D
             if (makeTimer == 0)
             {
                 Camera2D cam = GetNode<Camera2D>("%Camera");
-                Vector2 offset = cam.Offset;
+                Vector2I offset = (Vector2I) cam.Offset / TILE_SCALE;
                 cam.Offset = new(0, 0);
-                move += (Vector2I)offset / map_scale;
+                move += offset;
                 moving = true;
             }
         }
@@ -206,7 +215,7 @@ public partial class NoiseMap : Node2D
 
         if (Input.IsActionJustPressed("ui_accept"))
         {
-            noise_sphere.fnl.Seed = (int)Math.Floor(r.NextDouble() * 1000000);
+            noise_sphere.fnl.Seed = (int)Math.Floor(r.NextSingle() * 1000000);
             make = true;
         }
 
