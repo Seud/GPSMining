@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://ckj5eyohst5ry"]
+[gd_scene load_steps=4 format=3 uid="uid://ckj5eyohst5ry"]
 
 [ext_resource type="Script" path="res://src/NoiseMap.cs" id="1_ajh2s"]
 [ext_resource type="Script" path="res://src/OSMTiles.cs" id="2_mmt7m"]
+[ext_resource type="Script" path="res://src/TileDownloader.cs" id="3_s46ns"]
 
 [node name="NoiseMap" type="Node2D"]
 script = ExtResource("1_ajh2s")
@@ -21,6 +22,10 @@ centered = false
 [node name="Camera" type="Camera2D" parent="."]
 unique_name_in_owner = true
 anchor_mode = 0
+
+[node name="TileDownloader" type="Node2D" parent="."]
+unique_name_in_owner = true
+script = ExtResource("3_s46ns")
 
 [node name="UILayer" type="CanvasLayer" parent="."]
 
@@ -75,3 +80,5 @@ offset_right = 1.0
 offset_bottom = 12.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[connection signal="TextureReady" from="TileDownloader" to="OSMTiles" method="OnTextureReady" flags=3]

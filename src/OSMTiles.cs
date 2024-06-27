@@ -1,7 +1,6 @@
 using Godot;
 using Godot.Collections;
 using System;
-using System.Security;
 
 namespace GPSMining;
 
@@ -23,13 +22,9 @@ public partial class OSMTiles : Node2D
 
     private int render_count = 0;
 
-    ImageTexture default_tile_tex = new();
-    private Dictionary<int, Dictionary<int, Dictionary<int, Sprite2D>>> tiles = new();
+    private TileDownloader tile_downloader;
 
-    public static String GetTileID(Vector2I tile, int zoom)
-    {
-        return $"z{zoom}x{tile.X}y{tile.Y}";
-    }
+    private Dictionary<int, Dictionary<int, Dictionary<int, Sprite2D>>> tiles = new();
 
     public static Vector2I GetTile(Vector2I position)
     {
@@ -98,7 +93,7 @@ public partial class OSMTiles : Node2D
             }
         }
 
-        GD.Print($"Total {render_count} tiles");
+        //GD.Print($"Total {render_count} tiles");
 
         if (render_count > MAX_RENDERED_TILES)
         {
@@ -121,7 +116,8 @@ public partial class OSMTiles : Node2D
                         Vector2I tile_position = GetTilePosition(tile);
                         tile_node.Position = (tile_position - map_position);
                         tile_node.Visible = true;
-                    } else
+                    }
+                    else
                     {
                         tile_node.Visible = false;
                     }
@@ -134,13 +130,15 @@ public partial class OSMTiles : Node2D
     {
         Sprite2D sprite = new()
         {
-            Texture = default_tile_tex,
+            Texture = TileDownloader.default_tile_tex,
             Centered = false,
         };
 
         tiles[zoom][x][y] = sprite;
         AddChild(sprite);
         render_count++;
+
+        tile_downloader.RequestTexture(x, y, zoom);
     }
 
     public void CleanTiles()
@@ -158,13 +156,13 @@ public partial class OSMTiles : Node2D
                 {
                     int distance_y = Math.Abs(map_tile.Y - tile_y);
 
-                    if(map_zoom != tile_zoom || distance_x > tile_amount_x * CLEAN_DISTANCE_FACTOR || distance_y > tile_amount_y * CLEAN_DISTANCE_FACTOR)
+                    if (map_zoom != tile_zoom || distance_x > tile_amount_x * CLEAN_DISTANCE_FACTOR || distance_y > tile_amount_y * CLEAN_DISTANCE_FACTOR)
                     {
                         to_clean.Add(tile_y);
                     }
                 }
 
-                foreach(int tile_y in to_clean)
+                foreach (int tile_y in to_clean)
                 {
                     render_count--;
                     y_dict[tile_y].QueueFree();
@@ -175,13 +173,20 @@ public partial class OSMTiles : Node2D
             }
         }
 
-        GD.Print($"(Cleaned) Total {render_count} tiles");
+        //GD.Print($"(Cleaned) Total {render_count} tiles");
+    }
+
+    public void OnTextureReady(Texture2D tex, int x, int y, int zoom)
+    {
+        if (tiles[zoom][x].ContainsKey(y))
+        {
+            tiles[zoom][x][y].Texture = tex;
+        }
+
     }
 
     public override void _Ready()
     {
-        Image default_tile_image = new();
-        default_tile_image.Load("res://house256.jpg");
-        default_tile_tex.SetImage(default_tile_image);
+        tile_downloader = GetNode<TileDownloader>("%TileDownloader");
     }
 }
