@@ -1,133 +1,196 @@
 using Godot;
 using System;
-using System.IO;
 
 namespace GPSMining;
 
+/// <summary>
+/// A Node that can request OpenStreetMaps raster tiles
+/// Stores the downloaded tiles on disk to minimize network usage
+/// </summary>
 [GlobalClass]
 public partial class TileDownloader : Node
 {
+    /// <summary>
+    /// Sent when a Tile texture is ready for display
+    /// </summary>
+    /// <param name="texture">The texture</param>
+    /// <param name="x">Tile X coordinate</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
     [Signal]
-    public delegate void TextureReadyEventHandler(Texture2D tex, int x, int y, int zoom);
+    public delegate void TextureReadyEventHandler(Texture2D texture, int x, int y, int zoom);
 
-    public const String TILE_CACHE_DIR = "user://tile_cache";
-    public const int TILE_CACHE_TIME = 86400 * 7;
-    public const String TILE_FORMAT = "webp";
-    public const String HTTP_SOURCE = "https://tile.openstreetmap.org/{0}/{1}/{2}.png";
+    /// <summary>
+    /// Extension of image files
+    /// WebP compression is more efficient than PNG and lossless
+    /// </summary>
+    public const string TileFormat = "webp";
 
-    public static readonly Texture2D failed_tile_tex = GD.Load<Texture2D>("res://assets/default_failed.png");
-    public static readonly Texture2D default_tile_tex = GD.Load<Texture2D>("res://assets/default_loading.png");
+    /// <summary>
+    /// Texture to use for tiles that failed to load
+    /// </summary>
+    public static readonly Texture2D FailedTileTex = GD.Load<Texture2D>(Globals.FailedTileTexPath);
+    /// <summary>
+    /// Texture to use for tiles being loaded
+    /// </summary>
+    public static readonly Texture2D LoadingFileTex = GD.Load<Texture2D>(Globals.LoadingTileTexPath);
 
-    public static String GetTileID(int x, int y, int zoom)
+    /// <summary>
+    /// Gets a string representation of a tile identifier
+    /// Used to generate a file name
+    /// </summary>
+    /// <param name="x">Tile X coordinate</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    /// <returns>Tile ID</returns>
+    public static string GetTileID(int x, int y, int zoom)
     {
         return $"z{zoom}x{x}y{y}";
     }
 
-    private void UpdateTile(int fake_x, int x, int y, int zoom)
+    /// <summary>
+    /// Re-downloads an existing tile
+    /// Used to fix corruption or refresh an old cache
+    /// </summary>
+    /// <param name="xFake">Tile X coordinate (Displayed)</param>
+    /// <param name="x">Tile X coordinate (Actual)</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    private void UpdateTile(int xFake, int x, int y, int zoom)
     {
-        String tile_id = GetTileID(x, y, zoom);
+        string tileID = GetTileID(x, y, zoom);
 
-        DirAccess da = DirAccess.Open(TILE_CACHE_DIR);
-        da.Remove($"{tile_id}.{TILE_FORMAT}");
-        Callable.From(() => RequestTexture(fake_x, y, zoom)).CallDeferred();
+        DirAccess da = DirAccess.Open(Globals.TileCacheDir);
+        da.Remove($"{tileID}.{TileFormat}");
+
+        Callable.From(() => RequestTexture(xFake, y, zoom)).CallDeferred();
     }
 
-    private void LoadTextureFromDisk(int fake_x, int x, int y, int zoom, String tile_path)
+    /// <summary>
+    /// Loads an existing tile from disk then updates the corresponding tile
+    /// </summary>
+    /// <param name="xFake">Tile X coordinate (Displayed)</param>
+    /// <param name="x">Tile X coordinate (Actual)</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    /// <param name="tilePath">Path to the file</param>
+    private void LoadTextureFromDisk(int xFake, int x, int y, int zoom, string tilePath)
     {
-        Image tile_image = Image.LoadFromFile(tile_path);
-        if (tile_image == null)
+        Image tileImage = Image.LoadFromFile(tilePath);
+        if (tileImage == null)
         {
-            GD.PushError($"File {tile_path} is corrupted, reloading");
-            UpdateTile(fake_x, x, y, zoom);
+            GD.PushError($"File {tilePath} is corrupted, reloading");
+            UpdateTile(xFake, x, y, zoom);
             return;
         }
-        Texture2D tile_tex = ImageTexture.CreateFromImage(tile_image);
 
-        Callable.From(() => EmitSignal(SignalName.TextureReady, tile_tex, fake_x, y, zoom)).CallDeferred();
+        Texture2D tileTexture = ImageTexture.CreateFromImage(tileImage);
+        Callable.From(() => EmitSignal(SignalName.TextureReady, tileTexture, xFake, y, zoom)).CallDeferred();
     }
 
-    private void DownloadTexture(int fake_x, int x, int y, int zoom, String tile_path)
+    /// <summary>
+    /// Downloads a tile and saves it to the disk
+    /// </summary>
+    /// <param name="xFake">Tile X coordinate (Displayed)</param>
+    /// <param name="x">Tile X coordinate (Actual)</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    /// <param name="tilePath">Path to the file</param>
+    private void DownloadTexture(int xFake, int x, int y, int zoom, string tilePath)
     {
         HttpRequest request = new();
         AddChild(request);
-        request.RequestCompleted += (long result, long responseCode, string[] headers, byte[] body) => OnRequestCompleted(result, body, fake_x, x, y, zoom, tile_path, request);
+        request.RequestCompleted += (long result, long responseCode, string[] headers, byte[] body) => OnRequestCompleted(result, body, xFake, x, y, zoom, tilePath, request);
 
-        String request_url = String.Format(HTTP_SOURCE, zoom, x, y);
-        Error error = request.Request(request_url, new string[] { "User-Agent: GPSMining/0.1 (Godot) https://github.com/Seud/GPSMining" });
+        string requestUrl = string.Format(Globals.HttpUri, zoom, x, y);
+        Error error = request.Request(requestUrl, new string[] { Globals.UserAgent });
         if (error != Error.Ok)
         {
-            GD.PushError($"Request {request_url} failed !");
-            EmitSignal(SignalName.TextureReady, failed_tile_tex, fake_x, y, zoom);
+            GD.PushError($"Request {requestUrl} failed !");
+            EmitSignal(SignalName.TextureReady, FailedTileTex, xFake, y, zoom);
             return;
         }
     }
 
-    public void RequestTexture(int fake_x, int y, int zoom)
+    /// <summary>
+    /// Requests a tile image to be loaded or downloaded
+    /// Fake coordinates are used for tiles that are outside of the map to permit looping around
+    /// </summary>
+    /// <param name="xFake">Tile X coordinate (Displayed)</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    public void RequestTexture(int xFake, int y, int zoom)
     {
-        int x = (int) Util.Mod(fake_x, MercatorMap.GetMaxPosition(zoom) / MercatorMap.TILE_SIZE);
+        int x = (int)Util.Mod(xFake, MercatorMap.GetMaxPosition(zoom) / Globals.TileSize);
 
-        //GD.Print($"Magic ! {fake_x} is now {x} !");
-        //return;
+        string tileID = GetTileID(x, y, zoom);
+        string tilePath = $"{Globals.TileCacheDir}/{tileID}.{TileFormat}";
 
-        String tile_id = GetTileID(x, y, zoom);
-        String tile_path = $"{TILE_CACHE_DIR}/{tile_id}.{TILE_FORMAT}";
-
-        if (!Godot.FileAccess.FileExists(tile_path))
+        if (!Godot.FileAccess.FileExists(tilePath))
         {
-            DownloadTexture(fake_x, x, y, zoom, tile_path);
+            DownloadTexture(xFake, x, y, zoom, tilePath);
         }
         else
         {
-            ulong mtime = Godot.FileAccess.GetModifiedTime(tile_path);
-            double curtime = Time.GetUnixTimeFromSystem();
-            int time_diff = (int) (Math.Floor(curtime) - mtime);
+            // Check if the tile needs a refresh
+            ulong mTime = Godot.FileAccess.GetModifiedTime(tilePath);
+            double currentTime = Time.GetUnixTimeFromSystem();
+            int timeDifference = (int)(Math.Floor(currentTime) - mTime);
 
-            if (time_diff > TILE_CACHE_TIME)
+            if (timeDifference > Globals.TileCacheTime)
             {
-                GD.Print($"File {tile_id} is old, refreshing");
-                UpdateTile(fake_x, x, y, zoom);
-            } else
+                GD.Print($"File {tileID} is old, refreshing");
+                UpdateTile(xFake, x, y, zoom);
+            }
+            else
             {
-                WorkerThreadPool.AddTask(Callable.From(() => LoadTextureFromDisk(fake_x, x, y, zoom, tile_path)));
+                WorkerThreadPool.AddTask(Callable.From(() => LoadTextureFromDisk(xFake, x, y, zoom, tilePath)));
             }
         }
 
     }
 
-    private void OnRequestCompleted(long result, byte[] body, int fake_x, int x, int y, int zoom, String tile_path, HttpRequest request)
+    /// <summary>
+    /// Executed when a tile has finished downloading
+    /// Checks if the download was successful and saves the image on disk
+    /// </summary>
+    /// <param name="result">Result of the request</param>
+    /// <param name="body">Contents of the response</param>
+    /// <param name="xFake">Tile X coordinate (Displayed)</param>
+    /// <param name="x">Tile X coordinate (Actual)</param>
+    /// <param name="y">Tile Y coordinate</param>
+    /// <param name="zoom">Tile zoom level</param>
+    /// <param name="tilePath">Path to the file</param>
+    /// <param name="request">Request node, freed once the request is over</param>
+    private void OnRequestCompleted(long result, byte[] body, int xFake, int x, int y, int zoom, String tilePath, HttpRequest request)
     {
         request.QueueFree();
 
-        if(result != (long)HttpRequest.Result.Success)
+        if (result != (long)HttpRequest.Result.Success)
         {
             GD.PushError($"Request for {zoom},{x},{y} is {result} !");
-            EmitSignal(SignalName.TextureReady, failed_tile_tex, fake_x, y, zoom);
+            EmitSignal(SignalName.TextureReady, FailedTileTex, xFake, y, zoom);
             return;
         }
 
-        Image tmp_tile_image = new();
-        Error error = tmp_tile_image.LoadPngFromBuffer(body);
+        Image downloadedTileImage = new();
+        Error error = downloadedTileImage.LoadPngFromBuffer(body);
 
         if (error != Error.Ok)
         {
             GD.PushError($"Loading image for {zoom},{x},{y} is {error} !");
-            EmitSignal(SignalName.TextureReady, failed_tile_tex, fake_x, y, zoom);
+            EmitSignal(SignalName.TextureReady, FailedTileTex, xFake, y, zoom);
             return;
         }
 
-        tmp_tile_image.SaveWebp($"{tile_path}");
+        downloadedTileImage.SaveWebp($"{tilePath}");
 
-        WorkerThreadPool.AddTask(Callable.From(() => LoadTextureFromDisk(fake_x, x, y, zoom, tile_path)));
+        WorkerThreadPool.AddTask(Callable.From(() => LoadTextureFromDisk(xFake, x, y, zoom, tilePath)));
     }
 
     public override void _Ready()
     {
-        DirAccess.MakeDirAbsolute(TILE_CACHE_DIR);
-    }
-
-    public override void _Process(double delta)
-    {
-
+        DirAccess.MakeDirAbsolute(Globals.TileCacheDir);
     }
 
 }

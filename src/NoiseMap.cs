@@ -3,151 +3,159 @@ using System;
 
 namespace GPSMining;
 
+/// <summary>
+/// Main node
+/// </summary>
 public partial class NoiseMap : Node2D
 {
-    private readonly Random r = new();
+    /// <summary>
+    /// Distance to move when using arrows in the editor.
+    /// </summary>
+    public const int MoveDistance = 8;
 
-    public const int TARGET_SIZE = 256;
-    public const int TILE_SCALE = 2;
-    public const int MOVE = 8;
+    private float _statCoverageMin;
+    private float _statCoverageMax;
+    private float _statAverage;
+    private float _statCurrentNoise;
+    private float _statArea;
 
-    private float power_min = 0.25f;
-    private float power_max = 0.75f;
+    private int _zoomMod = 0;
+    private int _makeTimer = 0;
+    private int _windowTimer = 0;
 
-    private float coverage_min;
-    private float coverage_max;
-    private float average;
-    private float center_noise;
+    /// <summary>
+    /// Coordinates of the center
+    /// </summary>
+    private Vector2 _center = new();
+    /// <summary>
+    /// Scale of the noise map
+    /// </summary>
+    private int _noiseScale = 4;
 
-    private int zoomMod = 0;
-    private int makeTimer = 0;
-    private int windowTimer = 0;
+    private MercatorMap _map = new();
+    private NoiseSphere _noiseSphere = new();
+    private OSMTiles _osmTiles;
 
-    private Vector2 center = new();
-    private int noise_scale = 4;
+    /// <summary>
+    /// Node rendering the noise map
+    /// </summary>
+    private Sprite2D _noiseOverlay;
 
-    private MercatorMap map = new();
-    private NoiseSphere noise_sphere = new();
-    private OSMTiles osm_tiles;
-    private Sprite2D noise_overlay;
-
-    public int GetArea()
-    {
-        return (int)center.X * (int)center.Y * 4;
-    }
-
+    /// <summary>
+    /// Renders the map around the current position
+    /// </summary>
     public void MakeMap()
     {
-        if (power_min >= power_max)
+        _statCoverageMin = 0.0001f;
+        _statCoverageMax = 0;
+        _statAverage = 0;
+
+        int zoom = _map.GetZoom();
+        Vector2I position = _map.GetPosition();
+
+        _osmTiles.Move(position, zoom);
+
+        int maxX = (int)Math.Ceiling((double)_center.X / _noiseScale);
+        int maxY = (int)Math.Ceiling((double)_center.Y / _noiseScale);
+
+        _statArea = 4 * maxX * maxY;
+
+        Image noiseImage = Image.Create(maxX * 2, maxY * 2, false, Image.Format.Rgba8);
+
+        for (int x = -maxX; x < maxX; x++)
         {
-            UpdateUI();
-            return;
-        }
-
-        coverage_min = 0.0001f;
-        coverage_max = 0;
-        average = 0;
-
-        int zoom = map.GetZoom();
-        Vector2I position = map.GetPosition();
-
-        osm_tiles.Move(position, zoom);
-
-        int max_x = (int) Math.Ceiling((double) center.X / noise_scale);
-        int max_y = (int) Math.Ceiling((double) center.Y / noise_scale);
-
-        Image noise_image = Image.Create(max_x * 2, max_y * 2, false, Image.Format.Rgba8);
-
-        for (int x = -max_x; x < max_x; x++)
-        {
-            for (int y = -max_y; y < max_y; y++)
+            for (int y = -maxY; y < maxY; y++)
             {
-                Vector2I offset = new Vector2I(x, y) * noise_scale / TILE_SCALE;
-                Vector2I position_adj = map.GetPosition() + offset;
+                Vector2I offset = new Vector2I(x, y) * _noiseScale / Globals.TileScale;
+                Vector2I positionAdjusted = _map.GetPosition() + offset;
 
-                if (position_adj.Y < 0 || position_adj.Y > MercatorMap.GetMaxPosition(zoom))
+                if (positionAdjusted.Y < 0 || positionAdjusted.Y > MercatorMap.GetMaxPosition(zoom))
                 {
                     continue;
                 }
 
-                double longitude_adj = MercatorMap.GetLongitude(position_adj, zoom);
-                double latitude_adj = MercatorMap.GetLatitude(position_adj, zoom);
+                double longitudeAdjusted = MercatorMap.GetLongitude(positionAdjusted, zoom);
+                double latitudeAdjusted = MercatorMap.GetLatitude(positionAdjusted, zoom);
 
-                float noise_raw = noise_sphere.GetNoiseSphere(latitude_adj, longitude_adj);
+                float noiseRaw = _noiseSphere.GetNoiseSphere(latitudeAdjusted, longitudeAdjusted);
 
-                float noise = Mathf.Clamp((noise_raw - power_min) / (power_max - power_min), 0, 1);
+                float noise = Mathf.Clamp((noiseRaw - Globals.PowerMin) / (Globals.PowerMax - Globals.PowerMin), 0, 1);
                 if (x == 0 && y == 0)
                 {
-                    center_noise = noise;
+                    _statCurrentNoise = noise;
                 }
 
-                if (noise >= 0) coverage_min += 1;
-                if (noise >= 1) coverage_max += 1;
-                average += Mathf.Clamp(noise, 0, 1);
+                if (noise > 0) _statCoverageMin += 1;
+                if (noise == 1) _statCoverageMax += 1;
+                _statAverage += Mathf.Clamp(noise, 0, 1);
 
                 if (noise > 0)
                 {
-                    noise_image.SetPixel(x + max_x, y + max_y, Color.FromHsv((1 - noise) * 2 / 3, 0.8f + 0.2f * noise, 1));
+                    noiseImage.SetPixel(x + maxX, y + maxY, Color.FromHsv((1 - noise) * 2 / 3, 0.8f + 0.2f * noise, 1));
                 }
             }
         }
 
-        noise_overlay.Texture = ImageTexture.CreateFromImage(noise_image);
+        _noiseOverlay.Texture = ImageTexture.CreateFromImage(noiseImage);
 
         UpdateUI();
     }
 
     public void UpdateUI()
     {
-        int zoom = map.GetZoom();
-        Vector2I position = map.GetPosition();
-        Vector2I tile = OSMTiles.GetTile(position);
-        Vector2I tile_local_position = OSMTiles.GetLocalPosition(position);
+        int zoom = _map.GetZoom();
+        Vector2I position = _map.GetPosition();
 
         String text = $"" +
             $"Zoom Level : ({zoom})\n" +
             $"Position : ({position.X}, {position.Y})\n" +
-            $"Noise here : {Math.Round(100 * center_noise, 4)} %\n" +
-            $"Tile : ({tile.X}, {tile.Y}), ({tile_local_position.X}, {tile_local_position.Y})\n" +
+            $"Noise here : {Math.Round(100 * _statCurrentNoise, 4)} %\n" +
             $"Latitude : {Math.Round(MercatorMap.GetLatitude(position, zoom) * 180 / Math.PI, 4)} °\n" +
             $"Longitude : {Math.Round(MercatorMap.GetLongitude(position, zoom) * 180 / Math.PI, 4)} °\n" +
-            $"Coverage (Min) : {Math.Round(100 * coverage_min / GetArea(), 4)} %\n" +
-            $"Coverage (Max) : {Math.Round(100 * coverage_max / GetArea(), 4)} %\n" +
-            $"Average : {Math.Round(100 * average / coverage_min, 4)} %\n";
+            $"Coverage (Min) : {Math.Round(100 * _statCoverageMin / _statArea, 4)} %\n" +
+            $"Coverage (Max) : {Math.Round(100 * _statCoverageMax / _statArea, 4)} %\n" +
+            $"Average : {Math.Round(100 * _statAverage / _statCoverageMin, 4)} %\n";
 
         RichTextLabel map_ui_text = GetNode<RichTextLabel>("%UIText");
         map_ui_text.Text = text;
     }
 
+    /// <summary>
+    /// Triggers when the window is resized
+    /// </summary>
     public void WindowResized()
     {
-        windowTimer = 12;
+        _windowTimer = 12;
     }
 
+    /// <summary>
+    /// Resize the map according to the new viewport size
+    /// </summary>
     public void ResizeMap()
     {
         Vector2 viewport_size = GetViewportRect().End;
 
-        center = viewport_size / 2;
-        noise_scale = (int)Math.Ceiling(Math.Sqrt(center.X * center.Y) / TARGET_SIZE);
-        noise_overlay.Scale = new(noise_scale, noise_scale);
+        _center = viewport_size / 2;
+        _noiseScale = (int)Math.Ceiling(Math.Sqrt(_center.X * _center.Y) / Globals.TargetSize);
+        _noiseOverlay.Scale = new(_noiseScale, _noiseScale);
 
         GD.Print();
 
-        osm_tiles.Position = center;
-        osm_tiles.Scale = new(TILE_SCALE, TILE_SCALE);
+        _osmTiles.Position = _center;
+        _osmTiles.Scale = new(Globals.TileScale, Globals.TileScale);
 
-        osm_tiles.UpdateSize(viewport_size);
+        _osmTiles.UpdateSize(viewport_size);
         MakeMap();
     }
 
-    // Called when the node enters the scene tree for the first time.
     public override void _Ready()
     {
-        noise_overlay = GetNode<Sprite2D>("%NoiseOverlay");
-        osm_tiles = GetNode<OSMTiles>("%OSMTiles");
+        _noiseOverlay = GetNode<Sprite2D>("%NoiseOverlay");
+        _osmTiles = GetNode<OSMTiles>("%OSMTiles");
         GetTree().Root.SizeChanged += () => WindowResized();
         ResizeMap();
+        _map.Move(MercatorMap.GetPosition(Globals.DefaultLatitude, Globals.DefaultLongitude, Globals.DefaultZoomLevel), true);
+        MakeMap();
     }
 
     public override void _Input(InputEvent @event)
@@ -156,18 +164,18 @@ public partial class NoiseMap : Node2D
         {
             Camera2D cam = GetNode<Camera2D>("%Camera");
             cam.Offset -= eventDrag.Relative;
-            makeTimer = 12;
+            _makeTimer = 12;
         }
         if (@event is InputEventMouseButton eventMouse)
         {
             if (eventMouse.Pressed && eventMouse.ButtonIndex == MouseButton.WheelUp)
             {
-                zoomMod++;
+                _zoomMod++;
             }
             else
             if (eventMouse.Pressed && eventMouse.ButtonIndex == MouseButton.WheelDown)
             {
-                zoomMod--;
+                _zoomMod--;
             }
         }
     }
@@ -178,92 +186,92 @@ public partial class NoiseMap : Node2D
         bool moving = false;
         Vector2I move = new();
 
-        if (makeTimer > 0 && !Input.IsMouseButtonPressed(MouseButton.Left))
+        if (_makeTimer > 0 && !Input.IsMouseButtonPressed(MouseButton.Left))
         {
-            makeTimer--;
-            if (makeTimer == 0)
+            _makeTimer--;
+            if (_makeTimer == 0)
             {
                 Camera2D cam = GetNode<Camera2D>("%Camera");
-                Vector2I offset = (Vector2I) cam.Offset / TILE_SCALE;
+                Vector2I offset = (Vector2I)cam.Offset / Globals.TileScale;
                 cam.Offset = new(0, 0);
                 move += offset;
                 moving = true;
             }
         }
 
-        if (windowTimer > 0)
+        if (_windowTimer > 0)
         {
-            windowTimer--;
-            if (windowTimer == 0)
+            _windowTimer--;
+            if (_windowTimer == 0)
             {
                 ResizeMap();
             }
         }
 
-        if (zoomMod > 0)
+        if (_zoomMod > 0)
         {
-            map.ZoomIn(zoomMod);
-            zoomMod = 0;
+            _map.ZoomIn(_zoomMod);
+            _zoomMod = 0;
             make = true;
         }
-        if (zoomMod < 0)
+        if (_zoomMod < 0)
         {
-            map.ZoomOut(-zoomMod);
-            zoomMod = 0;
+            _map.ZoomOut(-_zoomMod);
+            _zoomMod = 0;
             make = true;
         }
 
         if (Input.IsActionJustPressed("ui_accept"))
         {
-            noise_sphere.fnl.Seed = (int)Math.Floor(r.NextSingle() * 1000000);
+            _noiseSphere.fnl.Seed = (int)Math.Floor(Util.Rand.NextSingle() * 1000000);
             make = true;
         }
 
         if (Input.IsActionJustPressed("ui_text_delete"))
         {
-            osm_tiles.CleanTiles();
+            _osmTiles.CleanTiles();
             make = true;
         }
 
         if (Input.IsActionJustPressed("ui_left"))
         {
-            move.X -= MOVE;
+            move.X -= MoveDistance;
             moving = true;
         }
 
         if (Input.IsActionJustPressed("ui_right"))
         {
-            move.X += MOVE;
+            move.X += MoveDistance;
             moving = true;
         }
 
         if (Input.IsActionJustPressed("ui_up"))
         {
-            move.Y -= MOVE;
+            move.Y -= MoveDistance;
             moving = true;
         }
 
         if (Input.IsActionJustPressed("ui_down"))
         {
-            move.Y += MOVE;
+            move.Y += MoveDistance;
             moving = true;
         }
 
         if (Input.IsActionJustPressed("ui_page_up"))
         {
-            map.ZoomIn();
+            _map.ZoomIn();
             make = true;
         }
 
         if (Input.IsActionJustPressed("ui_page_down"))
         {
-            map.ZoomOut();
+            _map.ZoomOut();
             make = true;
         }
 
         if (moving)
         {
-            map.Move(move);
+            _map.Move(move);
             make = true;
         }
 
