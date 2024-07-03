@@ -27,9 +27,9 @@ public partial class Globals : Node
     public const int TargetSize = 256;
     public const int TileScale = 2;
 
+    public const int EarthCircumferenceKm = 40075;
+
     public const double DefaultLatitude = Math.PI / 180 * 43.70;
     public const double DefaultLongitude = Math.PI / 180 * 07.26;
-
-    public const float PowerMin = 0.25f;
-    public const float PowerMax = 0.75f;
+    public static readonly double DefaultScale = Math.Cos(DefaultLatitude);
 }

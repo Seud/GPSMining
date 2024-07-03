@@ -11,9 +11,13 @@ config_version=5
 [application]
 
 config/name="GPSMining"
-run/main_scene="res://src/NoiseMap.tscn"
+run/main_scene="res://src/GPSMap.tscn"
 config/features=PackedStringArray("4.2", "C#", "Mobile")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Globals="*res://src/Globals.cs"
 
 [display]
 

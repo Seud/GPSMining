@@ -6,7 +6,7 @@ namespace GPSMining;
 /// <summary>
 /// Main node
 /// </summary>
-public partial class NoiseMap : Node2D
+public partial class GPSMap : Node2D
 {
     /// <summary>
     /// Distance to move when using arrows in the editor.
@@ -33,7 +33,7 @@ public partial class NoiseMap : Node2D
     private int _noiseScale = 4;
 
     private MercatorMap _map = new();
-    private NoiseSphere _noiseSphere = new();
+    private NoiseMap _noiseSphere;
     private OSMTiles _osmTiles;
 
     /// <summary>
@@ -57,6 +57,7 @@ public partial class NoiseMap : Node2D
 
         int maxX = (int)Math.Ceiling((double)_center.X / _noiseScale);
         int maxY = (int)Math.Ceiling((double)_center.Y / _noiseScale);
+        int maxPosition = MercatorMap.GetMaxPosition(zoom);
 
         _statArea = 4 * maxX * maxY;
 
@@ -69,17 +70,17 @@ public partial class NoiseMap : Node2D
                 Vector2I offset = new Vector2I(x, y) * _noiseScale / Globals.TileScale;
                 Vector2I positionAdjusted = _map.GetPosition() + offset;
 
-                if (positionAdjusted.Y < 0 || positionAdjusted.Y > MercatorMap.GetMaxPosition(zoom))
+                if (positionAdjusted.Y < 0 || positionAdjusted.Y > maxPosition)
                 {
                     continue;
                 }
 
-                double longitudeAdjusted = MercatorMap.GetLongitude(positionAdjusted, zoom);
-                double latitudeAdjusted = MercatorMap.GetLatitude(positionAdjusted, zoom);
+                positionAdjusted = MercatorMap.Align(positionAdjusted, zoom);
+                //double longitudeAdjusted = MercatorMap.GetLongitude(positionAdjusted, zoom);
+                //double latitudeAdjusted = MercatorMap.GetLatitude(positionAdjusted, zoom);
 
-                float noiseRaw = _noiseSphere.GetNoiseSphere(latitudeAdjusted, longitudeAdjusted);
-
-                float noise = Mathf.Clamp((noiseRaw - Globals.PowerMin) / (Globals.PowerMax - Globals.PowerMin), 0, 1);
+                float noise = _noiseSphere.GetNoise(positionAdjusted, zoom);
+                
                 if (x == 0 && y == 0)
                 {
                     _statCurrentNoise = noise;
@@ -91,7 +92,7 @@ public partial class NoiseMap : Node2D
 
                 if (noise > 0)
                 {
-                    noiseImage.SetPixel(x + maxX, y + maxY, Color.FromHsv((1 - noise) * 2 / 3, 0.8f + 0.2f * noise, 1));
+                    noiseImage.SetPixel(x + maxX, y + maxY, NoiseMap.GetColor(noise));
                 }
             }
         }
@@ -150,6 +151,7 @@ public partial class NoiseMap : Node2D
 
     public override void _Ready()
     {
+        _noiseSphere = GD.Load<NoiseMap>("res://src/noises/TestSphere.tres");
         _noiseOverlay = GetNode<Sprite2D>("%NoiseOverlay");
         _osmTiles = GetNode<OSMTiles>("%OSMTiles");
         GetTree().Root.SizeChanged += () => WindowResized();
@@ -223,7 +225,7 @@ public partial class NoiseMap : Node2D
 
         if (Input.IsActionJustPressed("ui_accept"))
         {
-            _noiseSphere.fnl.Seed = (int)Math.Floor(Util.Rand.NextSingle() * 1000000);
+            _noiseSphere.Fnl.Seed = (int)Math.Floor(Util.Rand.NextSingle() * 1000000);
             make = true;
         }
 

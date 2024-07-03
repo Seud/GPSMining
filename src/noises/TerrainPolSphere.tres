@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="NoiseMap" load_steps=3 format=3 uid="uid://bxmaih0nsjo5i"]
+
+[ext_resource type="FastNoiseLite" uid="uid://jaqie7n30raw" path="res://src/noises/TerrainPolFNL.tres" id="1_hjood"]
+[ext_resource type="Script" path="res://src/noises/NoiseMap.cs" id="2_wqm8m"]
+
+[resource]
+script = ExtResource("2_wqm8m")
+Fnl = ExtResource("1_hjood")
+PowerMin = -1.0
+PowerMax = 0.0

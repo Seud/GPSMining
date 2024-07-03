@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="NoiseMap" load_steps=3 format=3 uid="uid://dvbdodfr3fnib"]
+
+[ext_resource type="FastNoiseLite" uid="uid://b066ekybrl31u" path="res://src/noises/TestFNL.tres" id="1_vhbf4"]
+[ext_resource type="Script" path="res://src/noises/NoiseMap.cs" id="2_qlxiv"]
+
+[resource]
+script = ExtResource("2_qlxiv")
+Fnl = ExtResource("1_vhbf4")
+PowerMin = 0.25
+PowerMax = 0.75
+TempAffected = true
+TempLowValue = -0.2
+TempLowEnd = 0.2
+TempMidStart = 0.4
+TempMidValue = 0.2
+TempMidEnd = 0.6
+TempHighStart = 0.8
+TempHighValue = -0.2
+PolAffected = true
+PolLowValue = -0.2
+PolLowEnd = 0.2
+PolMidStart = 0.4
+PolMidValue = 0.2
+PolMidEnd = 0.6
+PolHighStart = 0.8
+PolHighValue = -0.2

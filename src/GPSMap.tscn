@@ -1,18 +1,18 @@
 [gd_scene load_steps=4 format=3 uid="uid://ckj5eyohst5ry"]
 
-[ext_resource type="Script" path="res://src/NoiseMap.cs" id="1_ajh2s"]
-[ext_resource type="Script" path="res://src/OSMTiles.cs" id="2_mmt7m"]
-[ext_resource type="Script" path="res://src/TileDownloader.cs" id="3_s46ns"]
+[ext_resource type="Script" path="res://src/GPSMap.cs" id="1_qksaa"]
+[ext_resource type="Script" path="res://src/OSMTiles.cs" id="2_82as4"]
+[ext_resource type="Script" path="res://src/TileDownloader.cs" id="3_63mio"]
 
-[node name="NoiseMap" type="Node2D"]
-script = ExtResource("1_ajh2s")
+[node name="GPSMap" type="Node2D"]
+script = ExtResource("1_qksaa")
 metadata/_edit_group_ = true
 metadata/_edit_lock_ = true
 
 [node name="OSMTiles" type="Node2D" parent="."]
 unique_name_in_owner = true
 show_behind_parent = true
-script = ExtResource("2_mmt7m")
+script = ExtResource("2_82as4")
 
 [node name="NoiseOverlay" type="Sprite2D" parent="."]
 unique_name_in_owner = true
@@ -25,7 +25,7 @@ anchor_mode = 0
 
 [node name="TileDownloader" type="Node2D" parent="."]
 unique_name_in_owner = true
-script = ExtResource("3_s46ns")
+script = ExtResource("3_63mio")
 
 [node name="UILayer" type="CanvasLayer" parent="."]
 
